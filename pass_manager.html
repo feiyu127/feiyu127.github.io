@@ -1,0 +1,434 @@
+<meta charset=UTF-8>
+<meta content="width=device-width,initial-scale=1" name=viewport>
+<script src=https://cdnjs.cloudflare.com/ajax/libs/vue/3.5.20/vue.global.min.js></script>
+<script src=https://cdnjs.cloudflare.com/ajax/libs/element-plus/2.11.1/index.full.min.js></script>
+<link href=https://cdnjs.cloudflare.com/ajax/libs/element-plus/2.11.1/theme-chalk/index.min.css rel=stylesheet>
+<script src=https://cdnjs.cloudflare.com/ajax/libs/crypto-js/4.2.0/crypto-js.min.js></script>
+<script src=https://unpkg.com/@element-plus/icons-vue></script>
+<title>password manager</title>
+<div id=app><el-form :inline=true class=demo-form-inline
+        v-show="!mainPassCheckDialogVisible && mainPassHash"><el-form-item><el-button @click=addPassword type=primary
+                v-if=mainPassHash>添加</el-button><el-button @click=importData type=primary>导入记录</el-button><el-button
+                @click=exportData type=primary v-if=mainPassHash>导出记录</el-button><el-button @click=cleanData(true)
+                type=primary v-if=mainPassHash>清理所有数据</el-button><el-button @click=cleanData type=primary title=锁定网站
+                v-if=mainPassHash>锁定</el-button></el-form-item><el-form-item v-if=leftTime>锁定时间：{{ leftTime
+            }}</el-form-item></el-form><el-tabs type=border-card v-model=activeTabName><el-tab-pane :key=tab :label=tab
+            :name=tab v-for="tab in tabsArray"><el-table :border=true :data=tableData style=width:100%><el-table-column
+                    label=名称 prop=name width=180></el-table-column><el-table-column label=用户名 prop=username
+                    width=180></el-table-column><el-table-column label=网址 prop=url></el-table-column><el-table-column
+                    label=操作><template #default=scope><el-button @click="handleRowInfo(scope.row, 'viewPassword')"
+                            type=primary title=查看密码 circle><el-icon><svg viewBox="0 0 1024 1024"
+                                    xmlns=http://www.w3.org/2000/svg>
+                                    <path
+                                        d="M512 160c320 0 512 352 512 352S832 864 512 864 0 512 0 512s192-352 512-352m0 64c-225.28 0-384.128 208.064-436.8 288 52.608 79.872 211.456 288 436.8 288 225.28 0 384.128-208.064 436.8-288-52.608-79.872-211.456-288-436.8-288zm0 64a224 224 0 1 1 0 448 224 224 0 0 1 0-448m0 64a160.192 160.192 0 0 0-160 160c0 88.192 71.744 160 160 160s160-71.808 160-160-71.744-160-160-160"
+                                        fill=currentColor></path>
+                                </svg></el-icon></el-button><el-button @click="handleRowInfo(scope.row, 'editPassword')"
+                            type=success title=修改密码 circle><el-icon>
+                                <edit>
+                            </el-icon></el-button><el-button @click="handleRowInfo(scope.row, 'deletePassword')"
+                            type=danger title=删除密码 circle><el-icon>
+                                <delete>
+                            </el-icon></el-button></template></el-table-column></el-table></el-tab-pane></el-tabs><el-dialog
+        v-model=createDialogVisible width=30%><el-form style=width:60% :model=formData :rules=configFormRules
+            label-width=auto ref=dataForm><el-form-item label=分类 prop=type><el-select :allow-create=true filterable
+                    name=type required v-model=formData.type><el-option :key=item :label=item :value=item
+                        v-for="item in tabsArray"></el-select></el-form-item><el-form-item label=名称 prop=name><el-input
+                    v-model=formData.name name=name required></el-form-item><el-form-item label=用户名
+                prop=username><el-input v-model=formData.username name=username required
+                    style=width:500px></el-form-item><el-form-item label=密码 prop=encrypted><el-input
+                    v-model=formData.encrypted name=username required style=width:500px show-password
+                    type=password></el-form-item><el-form-item label=网址 prop=url><el-input v-model=formData.url
+                    name=name></el-form-item><el-form-item label=info prop=info><el-input v-model=formData.info
+                    name=info style=width:500px></el-form-item></el-form><template #footer><span
+                class=dialog-footer><el-button @click="createDialogVisible = false">取消</el-button><el-button
+                    @click=addSiteInfo type=primary>保存</el-button></span></template></el-dialog><el-dialog
+        v-model=mainPassCheckDialogVisible width=30% @opened="()=>{console.log(this.$refs.inputPassRef.focus())}"
+        title=主密码验证><el-form style=width:60%
+            @submit.prevent="mainPassCheckDialogVisible=false;checkMainPass();"><el-form-item
+                v-if="this.mainPassCheckMethod =='first_init'"><el-alert title=首次使用，请先输入主密码！也可取消后导入记录
+                    type=warning></el-alert></el-form-item><el-form-item label=请输入主密码 prop=encrypted><el-input
+                    v-model=mainPassCheckForm.mainPass required style=width:500px show-password type=password
+                    ref=inputPassRef></el-form-item><el-form-item label=后续不再输入密码
+                v-if="!this.mainPassCheckMethod.includes('init')"><el-switch
+                    v-model=mainPassCheckForm.noneedInputPass></el-form-item></el-form><template #footer><span
+                class=dialog-footer><el-button @click="mainPassCheckDialogVisible = false">取消</el-button><el-button
+                    @click="mainPassCheckDialogVisible=false;checkMainPass();"
+                    type=primary>确定</el-button></span></template></el-dialog></div>
+<script>
+    const { ElMessageBox, ElMessage } = ElementPlus;
+    console.log(ElementPlusIconsVue);
+    function initIcon(app) {
+        const { Edit, View, Delete, Hide } = ElementPlusIconsVue;
+        app.component("Edit", Edit);
+        app.component("View", View);
+        app.component("Hide", Hide);
+        app.component("Delete", Delete);
+    }
+    const App = {
+        data() {
+            return {
+                title: "Hello Element Plus",
+                originData: {},
+                activeTabName: "",
+                tableData: [],
+                formData: {
+                    type: "",
+                    name: "",
+                    username: "",
+                    encrypted: "",
+                    url: "",
+                    info: "",
+                },
+                mainPassCheckForm: {
+                    mainPass: "",
+                    noneedInputPass: false,
+                },
+                configFormRules: {
+                    name: [{
+                        required: true,
+                        message: "请输入名称",
+                        trigger: "blur"
+                    }],
+                    username: [{
+                        required: true,
+                        message: "请输入用户名",
+                        trigger: "blur"
+                    }],
+                    encrypted: [{
+                        required: true,
+                        message: "请输入密码",
+                        trigger: "blur"
+                    }],
+                },
+                createDialogVisible: false,
+                mainPassCheckDialogVisible: false,
+                mainPassHash: "",
+                mainPassCheckMethod: "",
+                handleRow: {},
+                noneedInputPass: false,
+                leftTime: 0,
+            };
+        },
+        computed: {
+            tabsArray() {
+                return [...new Set(this.originData?.data?.passwd?.map((a) => a.type || "default"))];
+            },
+        },
+        methods: {
+            handleRowInfo(row, handleKey) {
+                if (["viewPassword", "editPassword", "deletePassword"].includes(handleKey)) {
+                    this.handleRow = row;
+                    if (this.noneedInputPass && this.mainPassHash) {
+                        this["_" + handleKey]();
+                    } else {
+                        this.mainPassCheckDialogVisible = true;
+                        this.mainPassCheckMethod = handleKey;
+                    }
+                }
+            },
+            _viewPassword() {
+                let opass = this.decodeSiteInfo(this.handleRow, this.mainPassHash);
+                ElMessageBox.alert(opass, "密码显示", {
+                    confirmButtonText: "OK",
+                });
+            },
+            addPassword() {
+                this.createDialogVisible = true;
+                this.$refs.dataForm.resetFields();
+                delete this.formData.id;
+            },
+            _editPassword() {
+                this.formData = Object.assign({}, this.handleRow);
+                this.formData.encrypted = "********";
+                this.createDialogVisible = true;
+                this.$refs.dataForm.resetFields();
+            },
+            _deletePassword() {
+                let passwd = this.originData.data.passwd;
+                let findIndex = passwd.findIndex((pass) => pass.name == this.handleRow.name);
+                if (findIndex >= 0) {
+                    this.originData.data.passwd = passwd.filter((pass) => pass.name != this.handleRow.name);
+                    this.storeInfo();
+                    ElMessage.success("删除成功！");
+                }
+            },
+            checkMainPass() {
+                console.log(this.mainPassCheckForm);
+                console.log("check main, ", this.mainPassCheckMethod);
+                let shacode = this.sha3_256(this.mainPassCheckForm.mainPass);
+                this.mainPassCheckForm.mainPass = "";
+                if (this.mainPassCheckMethod == "first_init") {
+                    let key = [...shacode].filter((char, index) => index%2 == 0).join("");
+                    let iv = [...shacode].filter((char, index) => index%4 == 0).join("");
+                    let encrypted = this.aesEncode(shacode, key, iv);
+                    console.log("first init encrypted: ", encrypted);
+                    this.originData = {
+                        version: "V1",
+                        data: {
+                            user: "",
+                            mainPass: encrypted,
+                            passwd: [],
+                        },
+                    };
+                    this.mainPassHash = encrypted;
+                    this.storeInfo();
+                    sessionStorage.setItem("store_cookie", shacode);
+                    sessionStorage.setItem("store_cookie_expire", Date.now() + 30 * 60000);
+                } else {
+                    if (!this.checkInputPass(shacode)) {
+                        ElMessage.error("主密码错误！");
+                        this.mainPassCheckDialogVisible = true;
+                        return;
+                    }
+                    if (this.mainPassCheckMethod == "init") {
+                        let existMainData = localStorage.getItem("global_data");
+                        let originData = JSON.parse(existMainData);
+                        this.originData = originData;
+                        this.activeTabName = this.tabsArray?.[0];
+                        this.mainPassHash = shacode;
+                        sessionStorage.setItem("store_cookie", shacode);
+                        sessionStorage.setItem("store_cookie_expire", Date.now() + 30 * 60000);
+                    } else if (this.mainPassCheckMethod == "viewPassword") {
+                        this._viewPassword();
+                    } else if (this.mainPassCheckMethod == "deletePassword") {
+                        this._deletePassword();
+                    } else if (this.mainPassCheckMethod == "editPassword") {
+                        this._editPassword();
+                    } else { }
+                    if (this.mainPassCheckForm.noneedInputPass) {
+                        this.noneedInputPass = true;
+                    }
+                }
+                this.mainPassCheckMethod = "";
+            },
+            checkInputPass(shacode) {
+                let existMainData = localStorage.getItem("global_data");
+                let originData = JSON.parse(existMainData);
+                let key = [...shacode].filter((char, index) => index%2 == 0).join("");
+                let iv = [...shacode].filter((char, index) => index%4 == 0).join("");
+                let decrypted = this.aesDecode(originData.data.mainPass, key, iv);
+                return shacode == decrypted;
+            },
+            lockSite() {
+                sessionStorage.clear();
+                window.location.reload();
+            },
+            addSiteInfo() {
+                this.$refs.dataForm.validate((valid, fields) => {
+                    if (valid) {
+                        let existsPasswd = this.originData.data.passwd;
+                        if (this.formData.id) {
+                            if (this.formData.username != this.handleRow.username && this.formData.encrypted.includes("********")) {
+                                ElMessage.error("修改用户名时，请重新输入密码");
+                                return;
+                            } else {
+                                let existsPasswdInfo = existsPasswd.find((passwd) => passwd.id == this.formData.id);
+                                let passChange = !this.formData.encrypted.includes("********");
+                                if (passChange) {
+                                    this.encodeSiteInfo(this.formData, this.mainPassHash);
+                                    Object.assign(existsPasswdInfo, this.formData);
+                                } else {
+                                    Object.assign(existsPasswdInfo, {
+                                        name: this.formData.name,
+                                        type: this.formData.type,
+                                        info: this.formData.info,
+                                        updateTime: this.formData.updateTime,
+                                    });
+                                }
+                                this.storeInfo();
+                                this.createDialogVisible = false;
+                                ElMessage.success("修改成功！");
+                            }
+                        } else {
+                            if (existsPasswd.find((a) => this.formData.name == a.name)) {
+                                ElMessage.error("名称重复！");
+                            } else {
+                                this.encodeSiteInfo(this.formData, this.mainPassHash);
+                                this.originData.data.passwd.push(Object.assign({
+                                    id: this.formData.updateTime
+                                }, this.formData));
+                                this.storeInfo();
+                                this.createDialogVisible = false;
+                                ElMessage.success("添加成功！");
+                            }
+                        }
+                    }
+                }
+                );
+            },
+            cleanData(deep = false) {
+                if (deep == true) {
+                    ElMessageBox.prompt("请输入 CLEAN 字符，确定清理数据", {
+                        confirmButtonText: "确认",
+                        cancelButtonText: "取消",
+                        inputPattern: /^CLEAN$/,
+                        inputErrorMessage: "请输入CLEAN",
+                    }).then(({ value }) => {
+                        localStorage.clear();
+                        sessionStorage.clear();
+                        setTimeout(() => {
+                            window.location.reload();
+                        }
+                            , 2000);
+                        ElMessage({
+                            type: "success",
+                            message: `清理成功，2秒后刷新页面！`,
+                        });
+                    }
+                    ).catch((e) => {
+                        ElMessage({
+                            type: e == "cancel" ? "info" : "error",
+                            message: e == "cancel" ? "取消清理" : "清理失败",
+                        });
+                    }
+                    );
+                } else {
+                    sessionStorage.clear();
+                    window.location.reload();
+                }
+            },
+            exportData() {
+                ElMessageBox.alert(`<div><button onclick="window.navigator.clipboard.writeText(this.nextElementSibling.innerText).then(()=>{ ElMessage.success('复制成功！')})">复制</button> <code>${btoa(JSON.stringify(this.originData))}</code></div>`, "导出数据", {
+                    dangerouslyUseHTMLString: true,
+                });
+            },
+            importData() {
+                ElMessageBox.prompt("请输入导入字符", "导入记录（此操作会覆盖之前记录，请谨慎执行！）", {
+                    confirmButtonText: "确认",
+                    cancelButtonText: "取消",
+                    inputPattern: /\w*/,
+                    inputErrorMessage: "字符无效",
+                }).then(({ value }) => {
+                    let globalData = atob(value);
+                    let originData = JSON.parse(globalData);
+                    if (originData.version) {
+                        localStorage.setItem("global_data", globalData);
+                        if (!this.checkInputPass(sessionStorage.getItem("store_cookie"))) {
+                            sessionStorage.clear();
+                        }
+                        setTimeout(() => {
+                            window.location.reload();
+                        }
+                            , 2000);
+                        ElMessage({
+                            type: "success",
+                            message: `成功导入${originData.data.passwd.length}条记录，2秒后刷新页面！`,
+                        });
+                    } else {
+                        throw new Error("error");
+                    }
+                }
+                ).catch((e) => {
+                    ElMessage({
+                        type: e == "cancel" ? "info" : "error",
+                        message: e == "cancel" ? "取消导入" : "导入失败",
+                    });
+                }
+                );
+            },
+            storeInfo() {
+                localStorage.setItem("global_data", JSON.stringify(this.originData));
+            },
+            encodeSiteInfo(info, shacode) {
+                let usernameLength = info.username.length;
+                let key = [...shacode].filter((char, index) => index % 2 == usernameLength % 2).join("");
+                let iv = [...shacode].filter((char, index) => index % 4 == usernameLength % 4).join("");
+                let updateTime = Date.now();
+                let originContent = updateTime + "★★★★★" + info.encrypted;
+                let encrypted = this.aesEncode(originContent, key, iv);
+                info.encrypted = encrypted;
+                info.updateTime = updateTime;
+            },
+            decodeSiteInfo(info, shacode) {
+                let usernameLength = info.username.length;
+                let key = [...shacode].filter((char, index) => index % 2 == usernameLength % 2).join("");
+                let iv = [...shacode].filter((char, index) => index % 4 == usernameLength % 4).join("");
+                let encrypted = this.aesDecode(info.encrypted, key, iv);
+                return encrypted.split("★★★★★").pop();
+            },
+            sha3_256(content) {
+                return CryptoJS.SHA3(content, {
+                    outputLength: 256
+                }).toString();
+            },
+            aesEncode(content, key, iv) {
+                let encrypted = CryptoJS.AES.encrypt(content, key, {
+                    iv: iv
+                });
+                return encrypted.toString();
+            },
+            aesDecode(content, key, iv) {
+                let decrypted = CryptoJS.AES.decrypt(content, key, {
+                    iv: iv
+                });
+                try {
+                    return decrypted.toString(CryptoJS.enc.Utf8);
+                } catch (error) {
+                    console.error("encode error");
+                    return "";
+                }
+            },
+            setCookie(name, value, minutes) {
+                const d = new Date();
+                d.setTime(d.getTime() + minutes * 60 * 1000);
+                const expires = "expires=" + d.toUTCString();
+                document.cookie = name + "=" + value + ";" + expires + ";path=/";
+            },
+        },
+        created: function () {
+            let existMainData = localStorage.getItem("global_data");
+            if (!existMainData) {
+                this.mainPassCheckDialogVisible = true;
+                this.mainPassCheckMethod = "first_init";
+                return;
+            }
+            let storeCookie = sessionStorage.getItem("store_cookie");
+            if (storeCookie && this.checkInputPass(storeCookie)) {
+                this.mainPassHash = storeCookie;
+            }
+            if (!this.mainPassHash) {
+                this.mainPassCheckDialogVisible = true;
+                this.mainPassCheckMethod = "init";
+            } else {
+                this.originData = JSON.parse(existMainData);
+                this.activeTabName = this.tabsArray?.[0];
+            }
+            setInterval(() => {
+                let expireAt = sessionStorage.getItem("store_cookie_expire");
+                if (expireAt) {
+                    let leftTime = parseInt(expireAt) - Date.now();
+                    if (leftTime > 0) {
+                        this.leftTime = `${String(Math.floor(leftTime / 60000)).padStart(2, "0")}:${String(Math.floor((leftTime % 60000) / 1000)).padStart(2, "0")}`;
+                    } else {
+                        this.leftTime = 0;
+                        this.cleanData();
+                    }
+                }
+            }
+                , 1000);
+        },
+        watch: {
+            activeTabName() {
+                if (this.activeTabName == "default") {
+                    this.tableData = this.originData.data.passwd.filter((pass) => pass.type == "");
+                } else {
+                    this.tableData = this.originData.data.passwd.filter((pass) => pass.type == this.activeTabName);
+                }
+            },
+            "originData.data.passwd": {
+                handler(newValue, oldValue) {
+                    if (this.activeTabName == "default") {
+                        this.tableData = this.originData.data.passwd.filter((pass) => pass.type == "");
+                    } else {
+                        this.tableData = this.originData.data.passwd.filter((pass) => pass.type == this.activeTabName);
+                    }
+                },
+                deep: true,
+            },
+        },
+    };
+    const app = Vue.createApp(App);
+    app.use(ElementPlus);
+    initIcon(app);
+    app.mount("#app");
+</script>
